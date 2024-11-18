@@ -7,6 +7,8 @@ from pydantic import BaseModel
 import traceback
 from contextlib import suppress
 import asyncio
+import os
+from typing import List, Optional
 
 api_key_header = APIKeyHeader(name="Authorization")
 
@@ -73,9 +75,40 @@ async def trigger_alist2strm(request: TaskRequest = None):
         logger.error(error_msg)
         raise HTTPException(status_code=500, detail=f"任务执行失败: {str(e)}")
 
-@router.get("/logs")
-async def get_logs():
+class LogResponse(BaseModel):
+    files: List[str]
+    total: int
+
+@router.get("/logs", response_model=Optional[LogResponse])
+async def get_logs(filename: Optional[str] = None):
     """
     获取日志文件
+    
+    :param filename: 指定日志文件名 (格式: YYYY-MM-DD), 不指定则返回日志文件列表
+    :return: 文件列表或文件下载响应
     """
-    return FileResponse("logs/dev.log")
+    logs_dir = "logs"
+    
+    # 确保日志目录存在
+    if not os.path.exists(logs_dir):
+        raise HTTPException(status_code=404, detail="日志目录不存在")
+    
+    # 如果指定了日志文件名
+    if filename:
+        log_file = os.path.join(logs_dir, f"{filename}.log")
+        if not os.path.exists(log_file):
+            raise HTTPException(status_code=404, detail=f"未找到 {filename} 的日志文件")
+        return FileResponse(log_file, filename=f"{filename}.log")
+    
+    # 获取所有日志文件列表
+    log_files = []
+    for file in os.listdir(logs_dir):
+        if file.endswith('.log'):
+            log_files.append(file.replace('.log', ''))
+    
+    log_files.sort(reverse=True)  # 按日期降序排序
+    
+    return LogResponse(
+        files=log_files,
+        total=len(log_files)
+    )
