@@ -30,13 +30,13 @@ def run_fastapi():
     在单独的线程中运行 FastAPI 服务
     """
     # 在 Windows 上禁用热重载，在其他系统上根据 DEBUG 设置决定
-    enable_reload = settings.DEBUG and platform.system() != "Windows"
+    # enable_reload = settings.DEBUG and platform.system() != "Windows"
     
     uvicorn.run(
         "app.api.server:app",
         host=settings.API_HOST,
         port=settings.API_PORT,
-        reload=enable_reload
+        reload=False
     )
 
 if __name__ == "__main__":
