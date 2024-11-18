@@ -40,7 +40,7 @@ async def test():
     }
 
 class TaskRequest(BaseModel):
-    task_id: int
+    task_id: str
 
 @router.post("/strm/run")
 async def trigger_alist2strm(request: TaskRequest = None):
@@ -51,11 +51,11 @@ async def trigger_alist2strm(request: TaskRequest = None):
     """
     if not settings.AlistServerList:
         raise HTTPException(status_code=404, detail="未检测到任何 Alist2Strm 模块配置")
-    
+
     try:
         # 运行单个任务
         if request and request.task_id:
-            task_id = request.task_id
+            task_id = request.task_id         
             server = next((s for s in settings.AlistServerList if s["id"] == task_id), None)
             if not server:
                 raise HTTPException(status_code=404, detail=f"未找到 ID 为 {task_id} 的任务")
