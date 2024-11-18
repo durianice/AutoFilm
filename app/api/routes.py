@@ -8,9 +8,11 @@ import traceback
 from contextlib import suppress
 import asyncio
 import os
-from typing import List, Optional
+from typing import List, Optional, Set
 
 api_key_header = APIKeyHeader(name="Authorization")
+
+running_tasks: Set[str] = set()
 
 async def verify_request(api_token: str = Depends(api_key_header)):
     """验证 API token"""
@@ -55,22 +57,46 @@ async def trigger_alist2strm(request: TaskRequest = None):
     try:
         # 运行单个任务
         if request and request.task_id:
-            task_id = request.task_id         
+            task_id = request.task_id
+            if task_id in running_tasks:
+                return {"status": "warning", "message": f"任务 {task_id} 正在运行中"}
+                
             server = next((s for s in settings.AlistServerList if s["id"] == task_id), None)
             if not server:
                 raise HTTPException(status_code=404, detail=f"未找到 ID 为 {task_id} 的任务")
             
             logger.info(f"API 触发 Alist2Strm 任务: {task_id}")
-            asyncio.create_task(Alist2Strm(**server).run())
+            running_tasks.add(task_id)
+            task = asyncio.create_task(Alist2Strm(**server).run())
+            
+            # 添加任务完成后的回调来清理运行状态
+            task.add_done_callback(lambda _: running_tasks.remove(task_id))
             return {"status": "success", "message": f"任务 {task_id} 已提交"}
         
         # 运行所有任务
+        submitted_tasks = []
+        skipped_tasks = []
         for server in settings.AlistServerList:
-            logger.info(f"API 触发 Alist2Strm 任务: {server['id']}")
-            asyncio.create_task(Alist2Strm(**server).run())
-        return {"status": "success", "message": "所有任务已提交"}
+            task_id = server['id']
+            if task_id in running_tasks:
+                skipped_tasks.append(task_id)
+                continue
+                
+            logger.info(f"API 触发 Alist2Strm 任务: {task_id}")
+            running_tasks.add(task_id)
+            task = asyncio.create_task(Alist2Strm(**server).run())
+            task.add_done_callback(lambda _: running_tasks.remove(task_id))
+            submitted_tasks.append(task_id)
+            
+        message = "所有任务已提交"
+        if skipped_tasks:
+            message = f"部分任务已提交。跳过正在运行的任务: {', '.join(skipped_tasks)}"
+        return {"status": "success", "message": message}
             
     except Exception as e:
+        # 确保发生错误时清理运行状态
+        if request and request.task_id:
+            running_tasks.discard(request.task_id)
         error_msg = f"任务执行失败: {str(e)}\n{traceback.format_exc()}"
         logger.error(error_msg)
         raise HTTPException(status_code=500, detail=f"任务执行失败: {str(e)}")
