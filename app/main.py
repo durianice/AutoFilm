@@ -1,6 +1,9 @@
 from asyncio import get_event_loop
+import uvicorn
+import threading
 from sys import path
 from os.path import dirname
+import platform
 
 path.append(dirname(dirname(__file__)))
 
@@ -22,11 +25,31 @@ def print_logo() -> None:
     print("")
 
 
+def run_fastapi():
+    """
+    在单独的线程中运行 FastAPI 服务
+    """
+    # 在 Windows 上禁用热重载，在其他系统上根据 DEBUG 设置决定
+    enable_reload = settings.DEBUG and platform.system() != "Windows"
+    
+    uvicorn.run(
+        "app.api.server:app",
+        host=settings.API_HOST,
+        port=settings.API_PORT,
+        reload=enable_reload
+    )
+
 if __name__ == "__main__":
     print_logo()
 
     logger.info(f"AutoFilm {settings.APP_VERSION} 启动中...")
     logger.debug(f"是否开启 DEBUG 模式: {settings.DEBUG}")
+
+    # 启动 FastAPI 服务
+    if settings.ENABLE_API:
+        api_thread = threading.Thread(target=run_fastapi, daemon=True)
+        api_thread.start()
+        logger.info(f"API 服务已启动于 http://{settings.API_HOST}:{settings.API_PORT}")
 
     scheduler = AsyncIOScheduler()
 

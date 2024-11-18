@@ -23,7 +23,7 @@ class AlistPath(BaseModel):
     thumb: str = ""  # 缩略图
     type: int = ""  # 类型
     hashinfo: str = "null"  # 哈希信息
-    hash_info: str | None = None  # 哈希信息
+    hash_info: str | dict | None = None  # 哈希信息 str 或者 dict
     raw_url: str = ""  # 原始地址
     readme: str = ""  # Readme 地址
     header: str = ""  # 头部信息

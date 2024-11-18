@@ -1,5 +1,9 @@
 Settings:
   DEV: False                          # 开发者模式(可选，默认 False)
+  ENABLE_API: True                    # API 设置
+  API_HOST: "0.0.0.0"                
+  API_PORT: 9001
+  API_TOKEN: 12345
 
 Alist2StrmList:
   - id: 动漫                          # 标识 ID

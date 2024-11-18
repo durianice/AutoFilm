@@ -17,6 +17,11 @@ class SettingManager:
     TZ: str = "Asia/Shanghai"
     # 开发者模式
     DEBUG: bool = False
+    # API 设置
+    ENABLE_API: bool = False
+    API_HOST: str = "0.0.0.0"
+    API_PORT: int = 9001
+    API_TOKEN: str = "12345"
 
     def __init__(self) -> None:
         """
@@ -39,12 +44,15 @@ class SettingManager:
 
     def __load_mode(self) -> None:
         """
-        加载模式
+        加载设置
         """
         with self.CONFIG.open(mode="r", encoding="utf-8") as file:
-            is_dev = safe_load(file).get("Settings", {}).get("DEV", False)
-
-        self.DEBUG = is_dev
+            content = safe_load(file).get("Settings", {})
+            self.DEBUG = content.get("DEV", False)
+            self.ENABLE_API = content.get("ENABLE_API", False)
+            self.API_HOST = content.get("API_HOST", "0.0.0.0")
+            self.API_PORT = content.get("API_PORT", 9001)
+            self.API_TOKEN = content.get("API_TOKEN", "12345")
 
     @property
     def BASE_DIR(self) -> Path:

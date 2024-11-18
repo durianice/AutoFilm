@@ -39,7 +39,7 @@ class HTTPClient:
         self.__new_sync_client()
         register(loop.run_until_complete, self.async_close())
         # register(print, "HTTP 客户端已关闭")
-        self.request()
+        # self.request()
 
     def __new_sync_client(self):
         """
@@ -149,7 +149,7 @@ class HTTPClient:
         self, url: str, *, sync: Literal[False], **kwargs
     ) -> Coroutine[Any, Any, Response]: ...
 
-    def head(
+    async def head(
         self,
         url: str,
         *,
@@ -166,7 +166,11 @@ class HTTPClient:
         :param kwargs: 其他请求参数，如 headers, cookies 等
         :return: HTTP 响应对象
         """
-        return self.request("head", url, sync=sync, params=params**kwargs)
+        # 合并所有参数到一个字典中
+        request_kwargs = {'params': params}
+        request_kwargs.update(kwargs)
+        resp = await self.request("head", url, sync=False, **request_kwargs)
+        return resp
 
     @overload
     def get(self, url: str, *, sync: Literal[True], **kwargs) -> Response: ...
@@ -257,7 +261,7 @@ class HTTPClient:
         self,
         url: str,
         file_path: Path,
-        params: dict = {},
+        params: dict | None = None,
         chunk_num: int = 5,
         **kwargs,
     ) -> None:
@@ -269,28 +273,40 @@ class HTTPClient:
         :param params: 请求参数
         :param kwargs: 其他请求参数，如 headers, cookies 等
         """
-        resp = await self.head(url, sync=False, params=params, **kwargs)
+        if params is None:
+            params = {}
+
+        # 合并所有参数到一个字典中
+        request_kwargs = {'params': params}
+        request_kwargs.update(kwargs)
+        resp = await self.head(url, sync=False, **request_kwargs)
+        print(resp.headers)
 
         file_size = int(resp.headers.get("Content-Length", -1))
 
         with TemporaryDirectory(prefix="AutoFilm_") as temp_dir:  # 创建临时目录
             temp_file = Path(temp_dir) / file_path.name
-
+            if not temp_file.exists():
+                temp_file.touch()
             if file_size == -1:
                 logger.debug(f"{file_path.name} 文件大小未知，直接下载")
                 await self.__download_chunk(url, temp_file, 0, 0, **kwargs)
             else:
                 async with TaskGroup() as tg:
-                    logger.debug(
-                        f"开始分片下载文件：{file_path.name}，分片数:{chunk_num}"
-                    )
-                    for start, end in self.caculate_divisional_range(
-                        file_size, chunk_num=chunk_num
-                    ):
-                        tg.create_task(
-                            self.__download_chunk(url, temp_file, start, end, **kwargs)
+                    try:
+                        logger.debug(
+                            f"开始分片下载文件：{file_path.name}，分片数:{chunk_num}"
                         )
-            copy(temp_file, file_path)
+                        for start, end in self.caculate_divisional_range(
+                            file_size, chunk_num=chunk_num
+                        ):
+                            tg.create_task(
+                                self.__download_chunk(url, temp_file, start, end, **kwargs)
+                            )
+                        copy(temp_file, file_path)
+                    except Exception as e:
+                        logger.error(f"分片下载处理失败 {str(e)}")
+                        raise
 
     async def __download_chunk(
         self,
@@ -539,7 +555,7 @@ class RequestUtils:
         cls,
         url: str,
         file_path: Path,
-        params: dict = {},
+        params: dict | None = None,
         **kwargs,
     ) -> None:
         """
@@ -550,8 +566,14 @@ class RequestUtils:
         :param params: 请求参数
         :param kwargs: 其他请求参数，如 headers, cookies 等
         """
-        client = cls.__get_client(url)
-        await client.download(url, file_path, params=params, **kwargs)
+        if params is None:
+            params = {}
+        try:
+            client = cls.__get_client(url)
+            await client.download(url, file_path, params=params, **kwargs)
+        except Exception as e:
+            logger.error(f"下载失败 {str(e)}")
+            raise
 
 
 # 退出时关闭所有客户端
