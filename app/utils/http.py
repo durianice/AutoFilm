@@ -303,10 +303,10 @@ class HTTPClient:
                             tg.create_task(
                                 self.__download_chunk(url, temp_file, start, end, **kwargs)
                             )
-                        copy(temp_file, file_path)
                     except Exception as e:
                         logger.error(f"分片下载处理失败 {str(e)}")
                         raise
+            copy(temp_file, file_path)
 
     async def __download_chunk(
         self,
