@@ -58,8 +58,8 @@ if __name__ == "__main__":
         for server in settings.AlistServerList:
             cron = server.get("cron")
             if cron:
-                async def job_wrapper():
-                    task_id = server['id']
+                async def job_wrapper(**kwargs):
+                    task_id = kwargs['server_config']['id']
                     if task_id in running_tasks:
                         logger.warning(f"任务 {task_id} 正在运行中，跳过本次定时执行")
                         return
@@ -67,17 +67,19 @@ if __name__ == "__main__":
                     try:
                         running_tasks.add(task_id)
                         logger.info(f">>> 任务 {task_id} 开始执行 <<<")
-                        await Alist2Strm(**server).run()
+                        await Alist2Strm(**kwargs['server_config']).run()
                     finally:
                         running_tasks.discard(task_id)
                         logger.info(f">>> 任务 {task_id} 执行完毕 <<<")
+
                 scheduler.add_job(
                     func=job_wrapper,
                     trigger=CronTrigger.from_crontab(cron),
                     id=f"alist2strm_{server['id']}_{str(uuid4())[:8]}",
+                    kwargs={'server_config': server},
                     misfire_grace_time=None,
                 )
-                logger.info(f'{server["id"]} 已被添加至后台任务')
+                logger.info(f'{server["id"]} {cron} 已被添加至后台任务')
             else:
                 logger.warning(f'{server["id"]} 未设置 cron')
     else:
