@@ -4,7 +4,7 @@ import threading
 from sys import path
 from os.path import dirname
 import platform
-from time import time
+from uuid import uuid4
 
 path.append(dirname(dirname(__file__)))
 
@@ -73,7 +73,7 @@ if __name__ == "__main__":
                 scheduler.add_job(
                     func=job_wrapper,
                     trigger=CronTrigger.from_crontab(cron),
-                    id=f"alist2strm_{server['id']}_{int(time())}",
+                    id=f"alist2strm_{server['id']}_{str(uuid4())[:8]}",
                     misfire_grace_time=None,
                 )
                 logger.info(f'{server["id"]} 已被添加至后台任务')
