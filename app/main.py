@@ -66,10 +66,11 @@ if __name__ == "__main__":
                         
                     try:
                         running_tasks.add(task_id)
+                        logger.info(f">>> 任务 {task_id} 开始执行 <<<")
                         await Alist2Strm(**server).run()
                     finally:
                         running_tasks.discard(task_id)
-                    
+                        logger.info(f">>> 任务 {task_id} 执行完毕 <<<")
                 scheduler.add_job(
                     func=job_wrapper,
                     trigger=CronTrigger.from_crontab(cron),
