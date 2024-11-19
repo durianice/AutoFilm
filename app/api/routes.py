@@ -1,18 +1,17 @@
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import FileResponse
 from fastapi.security import APIKeyHeader
-from app.core import settings, logger
+from app.core import settings, logger, get_scheduler_jobs
 from app.modules import Alist2Strm
 from pydantic import BaseModel
 import traceback
 from contextlib import suppress
 import asyncio
 import os
-from typing import List, Optional, Set
+from typing import List, Optional
+from app.core.state import running_tasks
 
 api_key_header = APIKeyHeader(name="Authorization")
-
-running_tasks: Set[str] = set()
 
 async def verify_request(api_token: str = Depends(api_key_header)):
     """验证 API token"""
@@ -59,7 +58,7 @@ async def trigger_alist2strm(request: TaskRequest = None):
         if request and request.task_id:
             task_id = request.task_id
             if task_id in running_tasks:
-                return {"status": "warning", "message": f"任务 {task_id} 正在运行中"}
+                return {"status": "warning", "message": f"任务 {task_id} 正在运行中，跳过本次手动执行"}
                 
             server = next((s for s in settings.AlistServerList if s["id"] == task_id), None)
             if not server:
@@ -73,25 +72,27 @@ async def trigger_alist2strm(request: TaskRequest = None):
             task.add_done_callback(lambda _: running_tasks.remove(task_id))
             return {"status": "success", "message": f"任务 {task_id} 已提交"}
         
-        # 运行所有任务
-        submitted_tasks = []
-        skipped_tasks = []
-        for server in settings.AlistServerList:
-            task_id = server['id']
-            if task_id in running_tasks:
-                skipped_tasks.append(task_id)
-                continue
+        return {"status": "failed", "message": "未指定 task_id"}
+
+        # 运行所有任务（需要可以取消注释）
+        # submitted_tasks = []
+        # skipped_tasks = []
+        # for server in settings.AlistServerList:
+        #     task_id = server['id']
+        #     if task_id in running_tasks:
+        #         skipped_tasks.append(task_id)
+        #         continue
                 
-            logger.info(f"API 触发 Alist2Strm 任务: {task_id}")
-            running_tasks.add(task_id)
-            task = asyncio.create_task(Alist2Strm(**server).run())
-            task.add_done_callback(lambda _: running_tasks.remove(task_id))
-            submitted_tasks.append(task_id)
+        #     logger.info(f"API 触发 Alist2Strm 任务: {task_id}")
+        #     running_tasks.add(task_id)
+        #     task = asyncio.create_task(Alist2Strm(**server).run())
+        #     task.add_done_callback(lambda _: running_tasks.remove(task_id))
+        #     submitted_tasks.append(task_id)
             
-        message = "所有任务已提交"
-        if skipped_tasks:
-            message = f"部分任务已提交。跳过正在运行的任务: {', '.join(skipped_tasks)}"
-        return {"status": "success", "message": message}
+        # message = "所有任务已提交"
+        # if skipped_tasks:
+        #     message = f"部分任务已提交。跳过正在运行的任务: {', '.join(skipped_tasks)}"
+        # return {"status": "success", "message": message}
             
     except Exception as e:
         # 确保发生错误时清理运行状态
@@ -138,3 +139,25 @@ async def get_logs(filename: Optional[str] = None):
         files=log_files,
         total=len(log_files)
     )
+
+
+# @router.get("/config")
+# async def get_config():
+#     """
+#     获取配置
+#     """
+#     return {
+#         "Alist2StrmList": settings.AlistServerList,
+#         "Ani2AlistList": settings.Ani2AlistList
+#     }
+
+@router.get("/jobs")
+async def get_jobs():
+    """
+    获取调度器中任务和手动添加的任务
+    """
+    scheduler_jobs = get_scheduler_jobs()
+    return {
+        "cron": scheduler_jobs,
+        "all": running_tasks
+    }

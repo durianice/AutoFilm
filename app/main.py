@@ -4,15 +4,17 @@ import threading
 from sys import path
 from os.path import dirname
 import platform
+from time import time
 
 path.append(dirname(dirname(__file__)))
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from app.core import settings, logger
+from app.core import settings, logger, scheduler
 from app.extensions import LOGO
 from app.modules import Alist2Strm, Ani2Alist
+from app.core.state import running_tasks
 
 
 def print_logo() -> None:
@@ -51,15 +53,28 @@ if __name__ == "__main__":
         api_thread.start()
         logger.info(f"API 服务已启动于 http://{settings.API_HOST}:{settings.API_PORT}")
 
-    scheduler = AsyncIOScheduler()
-
     if settings.AlistServerList:
         logger.info("检测到 Alist2Strm 模块配置，正在添加至后台任务")
         for server in settings.AlistServerList:
             cron = server.get("cron")
             if cron:
+                async def job_wrapper():
+                    task_id = server['id']
+                    if task_id in running_tasks:
+                        logger.warning(f"任务 {task_id} 正在运行中，跳过本次定时执行")
+                        return
+                        
+                    try:
+                        running_tasks.add(task_id)
+                        await Alist2Strm(**server).run()
+                    finally:
+                        running_tasks.discard(task_id)
+                    
                 scheduler.add_job(
-                    Alist2Strm(**server).run, trigger=CronTrigger.from_crontab(cron)
+                    func=job_wrapper,
+                    trigger=CronTrigger.from_crontab(cron),
+                    # id=f"alist2strm_{server['id']}_{int(time())}",
+                    # misfire_grace_time=None,
                 )
                 logger.info(f'{server["id"]} 已被添加至后台任务')
             else:
