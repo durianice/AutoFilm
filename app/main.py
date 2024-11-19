@@ -73,8 +73,8 @@ if __name__ == "__main__":
                 scheduler.add_job(
                     func=job_wrapper,
                     trigger=CronTrigger.from_crontab(cron),
-                    # id=f"alist2strm_{server['id']}_{int(time())}",
-                    # misfire_grace_time=None,
+                    id=f"alist2strm_{server['id']}_{int(time())}",
+                    misfire_grace_time=None,
                 )
                 logger.info(f'{server["id"]} 已被添加至后台任务')
             else:
