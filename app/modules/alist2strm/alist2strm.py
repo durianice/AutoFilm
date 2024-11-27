@@ -30,6 +30,7 @@ class Alist2Strm:
         max_workers: int = 50,
         max_downloaders: int = 5,
         sync_server: bool = False,
+        strm_content_prefix: str = "",
         **_,
     ) -> None:
         """
@@ -82,6 +83,7 @@ class Alist2Strm:
         self.__max_downloaders = Semaphore(max_downloaders)
 
         self.sync_server = sync_server
+        self.strm_content_prefix = strm_content_prefix
 
     async def run(self) -> None:
         """
@@ -155,7 +157,7 @@ class Alist2Strm:
         elif self.mode == "RawURL":
             content = path.raw_url
         elif self.mode == "AlistPath":
-            content = path.path
+            content = f"{self.strm_content_prefix}{path.path}"
         else:
             raise ValueError(f"AlistStrm 未知的模式 {self.mode}")
 
