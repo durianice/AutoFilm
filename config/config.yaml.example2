@@ -1,0 +1,45 @@
+Settings:
+  DEV: True
+  ENABLE_API: True
+  API_HOST: "0.0.0.0"                
+  API_PORT: 9001
+  API_TOKEN: aabbcc112233
+  WEBHOOK_TOKEN: "12345"
+  TELEGRAM_API_KEY: 1234567890:abcde
+  TELEGRAM_USER_ID: 999888777
+
+# 基础配置模板
+defaults: &defaults
+  cron: ""                                        # 不自动执行
+  url: https://alist.com:5244
+  token: alist-xxxx
+  flatten_mode: False
+  subtitle: True
+  image: True
+  nfo: True
+  mode: AlistURL
+  overwrite: False
+  sync_server: True
+  other_ext:
+  max_workers: 1
+  max_downloaders: 1
+  strm_content_prefix:
+
+Alist2StrmList:
+  # 电影类
+  - id: 动画电影
+    <<: *defaults
+    source_dir: /115/MP/电影/动画电影/
+    target_dir: F:\TEMP\_emby\电影\动画电影\      # windows
+
+  # 电视剧类
+  - id: 儿童
+    <<: *defaults
+    source_dir: /115/MP/电视剧/儿童/
+    target_dir: /media/电视剧/儿童/               # linux
+
+  - id: 国漫
+    cron: 0 20 * * *                             # 每天 20 点执行
+    <<: *defaults
+    source_dir: /115/MP/电视剧/国漫/
+    target_dir: F:\TEMP\_emby\电视剧\国漫\        # windows
