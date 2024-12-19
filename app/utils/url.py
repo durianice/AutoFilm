@@ -1,19 +1,19 @@
 from urllib.parse import quote, urlparse
 
+from app.extensions import SAFE_WORD
+
 
 class URLUtils:
     """
     URL 相关工具
     """
 
-    SAFE_WORD = ";/?:@=&"
-
-    @classmethod
-    def encode(cls, url: str) -> str:
+    @staticmethod
+    def encode(url: str) -> str:
         """
-        URL 编码
+        URL编码
         """
-        return quote(url, safe=cls.SAFE_WORD)
+        return quote(url, safe=SAFE_WORD)
 
     @staticmethod
     def get_resolve_url(url: str) -> tuple[str, str, int]:

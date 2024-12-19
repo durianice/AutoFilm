@@ -1,14 +1,15 @@
 from asyncio import sleep as async_sleep
-from typing import TypeVar, Callable, Any
+from typing import Any, TypeVar, Callable
 from time import sleep
-from functools import wraps
-from collections.abc import Coroutine
+from logging import Logger
 
-from app.core.log import logger
+from app.core.log import LoggerManager
 from app.utils.singleton import Singleton
 
-T1 = TypeVar("T1")
-T2 = TypeVar("T2")
+TRIES = 3
+DELAY = 3
+BACKOFF = 1
+T = TypeVar("T")
 
 
 class Retry(metaclass=Singleton):
@@ -16,93 +17,90 @@ class Retry(metaclass=Singleton):
     重试装饰器
     """
 
-    TRIES = 3  # 默认最大重试次数
-    DELAY = 3  # 默认延迟时间
-    BACKOFF = 1  # 默认延迟倍数
-
-    WARNING_MSG = "{}，{}秒后重试 ..."
-    ERROR_MSG = "{}，超出最大重试次数！"
-
-    @classmethod
+    @staticmethod
     def sync_retry(
-        cls,
-        exception: Exception,
+        ExceptionToCheck: Any,
         tries: int = TRIES,
         delay: int = DELAY,
         backoff: int = BACKOFF,
-        ret: T2 = None,
-    ) -> Callable[..., Callable[..., T1 | T2]]:
+        logger: LoggerManager | Logger | None = None,
+        ret: T = None,
+    ) -> Callable[..., T]:
         """
         同步重试装饰器
 
-        :param exception: 需要捕获的异常
-        :param tries: 最大重试次数
+        :param ExceptionToCheck: 需要捕获的异常
+        :param tries: 重试次数
         :param delay: 延迟时间
         :param backoff: 延迟倍数
+        :param logger: 日志对象（Logger）
         :param ret: 默认返回
         """
 
-        def inner(func: Callable[..., T1]) -> Callable[..., T1 | T2]:
-
-            @wraps(func)
-            def wrapper(*args, **kwargs) -> T1 | T2:
-                remaining_retries = tries
-                while remaining_retries > 0:
+        def deco_retry(f: Callable[..., T]) -> Callable[..., T]:
+            def f_retry(*args, **kwargs) -> T:
+                mtries, mdelay = tries, delay
+                while mtries > 1:
                     try:
-                        return func(*args, **kwargs)
-                    except exception as e:
-                        remaining_retries -= 1
-                        if remaining_retries >= 0:
-                            _delay = (tries - remaining_retries) * backoff * delay
-                            logger.warning(cls.WARNING_MSG.format(e, _delay))
-                            sleep(_delay)
+                        return f(*args, **kwargs)
+                    except ExceptionToCheck as _e:
+                        msg = f"{_e}，{mdelay}秒后重试 ..."
+                        if logger:
+                            logger.warning(msg)
                         else:
-                            logger.error(cls.ERROR_MSG.format(e))
-                            return ret
+                            print(msg)
+                        sleep(mdelay)
+                        mtries -= 1
+                        mdelay *= backoff
+                        e = _e
+                if logger:
+                    logger.warning(f"{e}，超出最大重试次数！")
+                return ret
 
-            return wrapper
+            return f_retry
 
-        return inner
+        return deco_retry
 
-    @classmethod
+    @staticmethod
     def async_retry(
-        cls,
-        exception: Exception,
+        ExceptionToCheck: Any,
         tries: int = TRIES,
         delay: int = DELAY,
         backoff: int = BACKOFF,
-        ret: T1 = None,
-    ) -> Callable[..., Callable[..., Coroutine[Any, Any, T1 | T2]]]:
+        logger: LoggerManager | Logger | None = None,
+        ret: T = None,
+    ) -> Callable[..., T]:
         """
         异步重试装饰器
 
-        :param exception: 需要捕获的异常
-        :param tries: 最大重试次数
+        :param ExceptionToCheck: 需要捕获的异常
+        :param tries: 重试次数
         :param delay: 延迟时间
         :param backoff: 延迟倍数
+        :param logger: 日志对象（Logger）
         :param ret: 默认返回
         """
 
-        def inner(
-            func: Callable[..., T1]
-        ) -> Callable[..., Coroutine[Any, Any, T1 | T2]]:
-
-            @wraps(func)
-            async def wrapper(*args, **kwargs) -> T1 | T2:
-                remaining_retries = tries
-                while remaining_retries > 0:
+        def deco_retry(f: Callable[..., T]) -> Callable[..., T]:
+            async def f_retry(*args, **kwargs) -> T:
+                mtries, mdelay = tries, delay
+                while mtries > 1:
                     try:
-                        return await func(*args, **kwargs)
-                    except exception as e:
-                        remaining_retries -= 1
-                        if remaining_retries >= 0:
-                            _delay = (tries - remaining_retries) * backoff * delay
-                            logger.warning(cls.WARNING_MSG.format(e, _delay))
-                            await async_sleep(_delay)
+                        return await f(*args, **kwargs)
+                    except ExceptionToCheck as _e:
+                        msg = f"{_e}，{mdelay}秒后重试 ..."
+                        if logger:
+                            logger.warning(msg)
                         else:
-                            logger.error(cls.ERROR_MSG.format(e))
-                            return ret
+                            print(msg)
+                        await async_sleep(mdelay)
+                        mtries -= 1
+                        mdelay *= backoff
+                        e = _e
+                if logger:
+                    logger.warning(f"{e}，超出最大重试次数！")
+                return ret
 
-            return wrapper
+            return f_retry
 
-        return inner
+        return deco_retry

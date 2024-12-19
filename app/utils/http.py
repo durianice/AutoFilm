@@ -1,11 +1,11 @@
 from typing import Any, Literal, overload
 from pathlib import Path
 from os import makedirs
-from asyncio import TaskGroup, to_thread
+from asyncio import TaskGroup, to_thread, get_event_loop
 from collections.abc import Coroutine
 from tempfile import TemporaryDirectory
 from shutil import copy
-from weakref import WeakSet
+from atexit import register
 
 from httpx import AsyncClient, Client, Response, TimeoutException
 from aiofile import async_open
@@ -13,6 +13,8 @@ from aiofile import async_open
 from app.core import settings, logger
 from app.utils.url import URLUtils
 from app.utils.retry import Retry
+
+loop = get_event_loop()
 
 
 class HTTPClient:
@@ -35,6 +37,9 @@ class HTTPClient:
 
         self.__new_async_client()
         self.__new_sync_client()
+        register(loop.run_until_complete, self.async_close())
+        # register(print, "HTTP 客户端已关闭")
+        # self.request()
 
     def __new_sync_client(self):
         """
@@ -48,22 +53,36 @@ class HTTPClient:
         """
         self.__async_client = AsyncClient(http2=True, follow_redirects=True, timeout=10)
 
-    def close_sync_client(self) -> None:
+    def close_sync_client(self):
         """
         关闭同步 HTTP 客户端
         """
         if self.__sync_client:
             self.__sync_client.close()
 
-    async def close_async_client(self) -> None:
+    async def close_async_client(self):
         """
         关闭异步 HTTP 客户端
         """
         if self.__async_client:
             await self.__async_client.aclose()
 
-    @Retry.sync_retry(TimeoutException, tries=3, delay=1, backoff=2)
-    def _sync_request(self, method: str, url: str, **kwargs) -> Response | None:
+    def sync_close(self) -> None:
+        """
+        同步关闭所有客户端
+        """
+        self.close_sync_client()
+        loop.run_until_complete(self.close_async_client())
+
+    async def async_close(self) -> None:
+        """
+        异步关闭所有客户端
+        """
+        self.close_sync_client()
+        await self.close_async_client()
+
+    @Retry.sync_retry(TimeoutException, tries=3, delay=1, backoff=2, logger=logger)
+    def _sync_request(self, method: str, url: str, **kwargs) -> Response:
         """
         发起同步 HTTP 请求
         """
@@ -74,27 +93,29 @@ class HTTPClient:
             self.__new_sync_client()
             raise TimeoutException
 
-    @Retry.async_retry(TimeoutException, tries=3, delay=1, backoff=2)
-    async def _async_request(self, method: str, url: str, **kwargs) -> Response | None:
+    @Retry.async_retry(TimeoutException, tries=3, delay=1, backoff=2, logger=logger)
+    def _async_request(
+        self, method: str, url: str, **kwargs
+    ) -> Coroutine[Any, Any, Response]:
         """
         发起异步 HTTP 请求
         """
         try:
-            return await self.__async_client.request(method, url, **kwargs)
+            return self.__async_client.request(method, url, **kwargs)
         except TimeoutException:
-            await self.close_async_client()
+            self.close_async_client()
             self.__new_async_client()
             raise TimeoutException
 
     @overload
     def request(
         self, method: str, url: str, *, sync: Literal[True], **kwargs
-    ) -> Response | None: ...
+    ) -> Response: ...
 
     @overload
     def request(
         self, method: str, url: str, *, sync: Literal[False] = False, **kwargs
-    ) -> Coroutine[Any, Any, Response | None]: ...
+    ) -> Coroutine[Any, Any, Response]: ...
 
     def request(
         self,
@@ -103,7 +124,7 @@ class HTTPClient:
         *,
         sync: Literal[True, False] = False,
         **kwargs,
-    ) -> Response | None | Coroutine[Any, Any, Response | None]:
+    ) -> Response | Coroutine[Any, Any, Response]:
         """
         发起 HTTP 请求
 
@@ -121,12 +142,12 @@ class HTTPClient:
             return self._async_request(method, url, **kwargs)
 
     @overload
-    def head(self, url: str, *, sync: Literal[True], **kwargs) -> Response | None: ...
+    def head(self, url: str, *, sync: Literal[True], **kwargs) -> Response: ...
 
     @overload
     def head(
         self, url: str, *, sync: Literal[False], **kwargs
-    ) -> Coroutine[Any, Any, Response | None]: ...
+    ) -> Coroutine[Any, Any, Response]: ...
 
     async def head(
         self,
@@ -135,7 +156,7 @@ class HTTPClient:
         sync: Literal[True, False] = False,
         params: dict = {},
         **kwargs,
-    ) -> Response | None | Coroutine[Any, Any, Response | None]:
+    ) -> Response | Coroutine[Any, Any, Response]:
         """
         发送 HEAD 请求
 
@@ -145,15 +166,19 @@ class HTTPClient:
         :param kwargs: 其他请求参数，如 headers, cookies 等
         :return: HTTP 响应对象
         """
-        return self.request("head", url, sync=sync, params=params, **kwargs)
+        # 合并所有参数到一个字典中
+        request_kwargs = {'params': params}
+        request_kwargs.update(kwargs)
+        resp = await self.request("head", url, sync=False, **request_kwargs)
+        return resp
 
     @overload
-    def get(self, url: str, *, sync: Literal[True], **kwargs) -> Response | None: ...
+    def get(self, url: str, *, sync: Literal[True], **kwargs) -> Response: ...
 
     @overload
     def get(
         self, url: str, *, sync: Literal[False], **kwargs
-    ) -> Coroutine[Any, Any, Response | None]: ...
+    ) -> Coroutine[Any, Any, Response]: ...
 
     def get(
         self,
@@ -162,7 +187,7 @@ class HTTPClient:
         sync: Literal[True, False] = False,
         params: dict = {},
         **kwargs,
-    ) -> Response | None | Coroutine[Any, Any, Response | None]:
+    ) -> Response | Coroutine[Any, Any, Response]:
         """
         发送 GET 请求
 
@@ -175,12 +200,12 @@ class HTTPClient:
         return self.request("get", url, sync=sync, params=params, **kwargs)
 
     @overload
-    def post(self, url: str, *, sync: Literal[True], **kwargs) -> Response | None: ...
+    def post(self, url: str, *, sync: Literal[True], **kwargs) -> Response: ...
 
     @overload
     def post(
         self, url: str, *, sync: Literal[False], **kwargs
-    ) -> Coroutine[Any, Any, Response] | None: ...
+    ) -> Coroutine[Any, Any, Response]: ...
 
     def post(
         self,
@@ -190,7 +215,7 @@ class HTTPClient:
         data: Any = None,
         json: dict = {},
         **kwargs,
-    ) -> Response | None | Coroutine[Any, Any, Response | None]:
+    ) -> Response | Coroutine[Any, Any, Response]:
         """
         发送 POST 请求
 
@@ -204,12 +229,12 @@ class HTTPClient:
         return self.request("post", url, sync=sync, data=data, json=json, **kwargs)
 
     @overload
-    def put(self, url: str, *, sync: Literal[True], **kwargs) -> Response | None: ...
+    def put(self, url: str, *, sync: Literal[True], **kwargs) -> Response: ...
 
     @overload
     def put(
         self, url: str, *, sync: Literal[False], **kwargs
-    ) -> Coroutine[Any, Any, Response | None]: ...
+    ) -> Coroutine[Any, Any, Response]: ...
 
     def put(
         self,
@@ -219,7 +244,7 @@ class HTTPClient:
         data: Any = None,
         json: dict = {},
         **kwargs,
-    ) -> Response | None | Coroutine[Any, Any, Response | None]:
+    ) -> Response | Coroutine[Any, Any, Response]:
         """
         发送 PUT 请求
 
@@ -230,7 +255,7 @@ class HTTPClient:
         :param kwargs: 其他请求参数，如 headers, cookies 等
         :return: HTTP 响应对象
         """
-        return self.request("put", url, sync=sync, data=data, json=json, **kwargs)
+        return self.request("put", url, sync=sync, data=data, json=json**kwargs)
 
     async def download(
         self,
@@ -353,10 +378,17 @@ class RequestUtils:
     """
 
     __clients: dict[str, HTTPClient] = {}
-    __client_list: WeakSet[HTTPClient] = WeakSet()
 
     @classmethod
-    def get_client(cls, url: str) -> HTTPClient:
+    def close(cls):
+        """
+        关闭所有 HTTP 客户端
+        """
+        for client in cls.__clients.values():
+            client.sync_close()
+
+    @classmethod
+    def __get_client(cls, url: str) -> HTTPClient:
         """
         获取 HTTP 客户端
 
@@ -364,48 +396,43 @@ class RequestUtils:
         :return: HTTP 客户端
         """
 
-        if url:
-            _, domain, port = URLUtils.get_resolve_url(url)
-            key = f"{domain}:{port}"
-            if key not in cls.__clients:
-                cls.__clients[key] = HTTPClient()
-            return cls.__clients[key]
-
-        client = HTTPClient()
-        cls.__client_list.add(client)
-        return client
+        _, domain, port = URLUtils.get_resolve_url(url)
+        key = f"{domain}:{port}"
+        if key not in cls.__clients:
+            cls.__clients[key] = HTTPClient()
+        return cls.__clients[key]
 
     @overload
     @classmethod
     def request(
         cls, method: str, url: str, sync: Literal[True], **kwargs
-    ) -> Response | None: ...
+    ) -> Response: ...
 
     @overload
     @classmethod
     def request(
         cls, method: str, url: str, sync: Literal[False] = False, **kwargs
-    ) -> Coroutine[Any, Any, Response | None]: ...
+    ) -> Coroutine[Any, Any, Response]: ...
 
     @classmethod
     def request(
         cls, method: str, url: str, sync: Literal[True, False] = False, **kwargs
-    ) -> Response | None | Coroutine[Any, Any, Response | None]:
+    ) -> Response | Coroutine[Any, Any, Response]:
         """
         发起 HTTP 请求
         """
-        client = cls.get_client(url)
+        client = cls.__get_client(url)
         return client.request(method, url, sync=sync, **kwargs)
 
     @overload
     @classmethod
-    def head(cls, url: str, sync: Literal[True], **kwargs) -> Response | None: ...
+    def head(cls, url: str, sync: Literal[True], **kwargs) -> Response: ...
 
     @overload
     @classmethod
     def head(
         cls, url: str, sync: Literal[False] = False, **kwargs
-    ) -> Coroutine[Any, Any, Response | None]: ...
+    ) -> Coroutine[Any, Any, Response]: ...
 
     @classmethod
     def head(
@@ -415,7 +442,7 @@ class RequestUtils:
         sync: Literal[True, False] = False,
         params: dict = {},
         **kwargs,
-    ) -> Response | None | Coroutine[Any, Any, Response | None]:
+    ) -> Response | Coroutine[Any, Any, Response]:
         """
         发送 HEAD 请求
 
@@ -429,13 +456,13 @@ class RequestUtils:
 
     @overload
     @classmethod
-    def get(cls, url: str, *, sync: Literal[True], **kwargs) -> Response | None: ...
+    def get(cls, url: str, *, sync: Literal[True], **kwargs) -> Response: ...
 
     @overload
     @classmethod
     def get(
         cls, url: str, *, sync: Literal[False] = False, **kwargs
-    ) -> Coroutine[Any, Any, Response | None]: ...
+    ) -> Coroutine[Any, Any, Response]: ...
 
     @classmethod
     def get(
@@ -445,7 +472,7 @@ class RequestUtils:
         sync: Literal[True, False] = False,
         params: dict = {},
         **kwargs,
-    ) -> Response | None | Coroutine[Any, Any, Response | None]:
+    ) -> Response | Coroutine[Any, Any, Response]:
         """
         发送 GET 请求
 
@@ -458,7 +485,7 @@ class RequestUtils:
 
     @overload
     @classmethod
-    def post(cls, url: str, *, sync: Literal[True], **kwargs) -> Response | None: ...
+    def post(cls, url: str, *, sync: Literal[True], **kwargs) -> Response: ...
 
     @overload
     @classmethod
@@ -470,7 +497,7 @@ class RequestUtils:
         data: Any = None,
         json: dict = {},
         **kwargs,
-    ) -> Coroutine[Any, Any, Response | None]: ...
+    ) -> Coroutine[Any, Any, Response]: ...
 
     @classmethod
     def post(
@@ -481,7 +508,7 @@ class RequestUtils:
         data: Any = None,
         json: dict = {},
         **kwargs,
-    ) -> Response | None | Coroutine[Any, Any, Response | None]:
+    ) -> Response | Coroutine[Any, Any, Response]:
         """
         发送 POST 请求
 
@@ -495,7 +522,7 @@ class RequestUtils:
 
     @overload
     @classmethod
-    def put(cls, url: str, *, sync: Literal[True], **kwargs) -> Response | None: ...
+    def put(cls, url: str, *, sync: Literal[True], **kwargs) -> Response: ...
 
     @overload
     @classmethod
@@ -506,12 +533,12 @@ class RequestUtils:
         sync: Literal[False] = False,
         data: Any = None,
         **kwargs,
-    ) -> Coroutine[Any, Any, Response | None]: ...
+    ) -> Coroutine[Any, Any, Response]: ...
 
     @classmethod
     def put(
         cls, url: str, *, sync: Literal[True, False] = False, data: Any = None, **kwargs
-    ) -> Response | None | Coroutine[Any, Any, Response | None]:
+    ) -> Response | Coroutine[Any, Any, Response]:
         """
         发送 PUT 请求
 
@@ -539,5 +566,15 @@ class RequestUtils:
         :param params: 请求参数
         :param kwargs: 其他请求参数，如 headers, cookies 等
         """
-        client = cls.get_client(url)
-        await client.download(url, file_path, params=params, **kwargs)
+        if params is None:
+            params = {}
+        try:
+            client = cls.__get_client(url)
+            await client.download(url, file_path, params=params, **kwargs)
+        except Exception as e:
+            logger.error(f"下载失败 {str(e)}")
+            raise
+
+
+# 退出时关闭所有客户端
+register(RequestUtils.close)

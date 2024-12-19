@@ -5,7 +5,7 @@ from pathlib import Path
 from aiofile import async_open
 
 from app.core import logger
-from app.utils import RequestUtils
+from app.utils import RequestUtils, Retry
 from app.extensions import VIDEO_EXTS, SUBTITLE_EXTS, IMAGE_EXTS, NFO_EXTS
 from app.modules.alist import AlistClient, AlistPath
 
@@ -117,7 +117,7 @@ class Alist2Strm:
 
         if not self.mode in ["AlistURL", "RawURL", "AlistPath"]:
             logger.warning(
-                f"Alist2Strm 的模式 {self.mode} 不存在，已设置为默认模式 AlistURL"
+                f"Alist2Strm的模式 {self.mode} 不存在，已设置为默认模式AlistURL"
             )
             self.mode = "AlistURL"
 
@@ -137,12 +137,13 @@ class Alist2Strm:
                     dir_path=self.source_dir, is_detail=is_detail, filter=filter
                 ):
                     tg.create_task(self.__file_processer(path))
-        logger.info("Alist2Strm 处理完成")
+        logger.info("Alist2Strm处理完成")
 
         if self.sync_server:
             await self.__cleanup_local_files()
             logger.info("清理过期的 .strm 文件完成")
 
+    @Retry.async_retry(Exception, tries=3, delay=3, backoff=2, logger=logger)
     async def __file_processer(self, path: AlistPath) -> None:
         """
         异步保存文件至本地
@@ -160,17 +161,22 @@ class Alist2Strm:
         else:
             raise ValueError(f"AlistStrm 未知的模式 {self.mode}")
 
-        await to_thread(local_path.parent.mkdir, parents=True, exist_ok=True)
+        try:
+            _parent = local_path.parent
+            if not _parent.exists():
+                await to_thread(_parent.mkdir, parents=True, exist_ok=True)
 
-        logger.debug(f"开始处理 {local_path}")
-        if local_path.suffix == ".strm":
-            async with async_open(local_path, mode="w", encoding="utf-8") as file:
-                await file.write(content)
-            logger.info(f"{local_path.name} 创建成功")
-        else:
-            async with self.__max_downloaders:
-                await RequestUtils.download(path.download_url, local_path)
-                logger.info(f"{local_path.name} 下载成功")
+            logger.debug(f"开始处理 {local_path}")
+            if local_path.suffix == ".strm":
+                async with async_open(local_path, mode="w", encoding="utf-8") as file:
+                    await file.write(content)
+                logger.info(f"{local_path.name} 创建成功")
+            else:
+                async with self.__max_downloaders:
+                    await RequestUtils.download(path.download_url, local_path)
+                    logger.info(f"{local_path.name} 下载成功")
+        except Exception as e:
+            raise RuntimeError(f"{local_path} 处理失败，详细信息：{e}")
 
     def __get_local_path(self, path: AlistPath) -> Path:
         """

@@ -1,7 +1,7 @@
 from typing import Callable, AsyncGenerator
 from time import time
 
-from httpx import Response
+from httpx import get, post, Response
 
 from app.core import logger
 from app.utils import HTTPClient, Multiton
@@ -13,6 +13,10 @@ class AlistClient(metaclass=Multiton):
     """
     Alist 客户端 API
     """
+
+    __HEADERS = {
+        "Content-Type": "application/json",
+    }
 
     def __init__(
         self,
@@ -57,7 +61,7 @@ class AlistClient(metaclass=Multiton):
         """
         关闭 HTTP 客户端
         """
-        await self.__client.async_close()
+        await self.__client.close()
 
     async def __request(
         self,
@@ -75,10 +79,10 @@ class AlistClient(metaclass=Multiton):
         """
 
         if auth:
-            headers = kwargs.get("headers", {})
+            headers = kwargs.get("headers", self.__HEADERS.copy())
             headers["Authorization"] = self.__get_token
             kwargs["headers"] = headers
-        return await self.__client.request(method, url, **kwargs, sync=False)
+        return await self.__client.request(method, url, **kwargs)
 
     async def __get(self, url: str, auth: bool = True, **kwargs) -> Response:
         """
@@ -145,7 +149,7 @@ class AlistClient(metaclass=Multiton):
         """
 
         json = {"username": self.username, "password": self.__password}
-        resp = self.__client.post(self.url + "/api/auth/login", json=json, sync=True)
+        resp = post(self.url + "/api/auth/login", json=json)
         if resp.status_code != 200:
             raise RuntimeError(f"更新令牌请求发送失败，状态码：{resp.status_code}")
 
@@ -163,8 +167,9 @@ class AlistClient(metaclass=Multiton):
         获取当前用户 base_path 和 id 并分别保存在 self.base_path 和 self.id 中
         """
 
-        headers = {"Authorization": self.__get_token}
-        resp = self.__client.get(self.url + "/api/me", headers=headers, sync=True)
+        headers = self.__HEADERS.copy()
+        headers["Authorization"] = self.__get_token
+        resp = get(self.url + "/api/me", headers=headers)
 
         if resp.status_code != 200:
             raise RuntimeError(f"获取用户信息请求发送失败，状态码：{resp.status_code}")
