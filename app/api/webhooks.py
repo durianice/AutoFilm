@@ -34,7 +34,7 @@ async def test(_: str = Depends(verify_path_token)):
     }
 
 
-async def refresh_fs_list(task_id: str) -> dict:
+async def refresh_fs_list(task_id: str, sub_dir: str = "") -> dict:
     """
     刷新文件列表缓存
     """
@@ -48,7 +48,22 @@ async def refresh_fs_list(task_id: str) -> dict:
     client = AlistClient(
         url, username, password, token
     )
-    return await client.async_api_fs_list(server["source_dir"], refresh=True)  
+    """递归刷新文件列表缓存"""
+    async def refresh_fs_list_task(path: str):
+        print(f"刷新文件列表：{path}")
+        for path in await client.async_api_fs_list(path, refresh=True):
+            if path.is_dir:
+                await refresh_fs_list_task(path.path)
+
+    parent_path_list = await client.async_api_fs_list(server["source_dir"])
+    sub_path = server["source_dir"] + sub_dir
+    for path in parent_path_list:
+        if sub_path == path.path:
+            """子目录存在则刷新他的缓存"""
+            await refresh_fs_list_task(sub_path)
+        else:
+            """子目录不存在则刷新父目录的缓存"""
+            await client.async_api_fs_list(server["source_dir"], refresh=True)
 
 class WebhookRequest(BaseModel):
     data: Dict
@@ -90,13 +105,12 @@ async def run_single_task(
         
         category = mediainfo.get("category", {})
         full_path = fileitem.get("path", "")
+        name = fileitem.get("name", "")
         task_id = category
         if not task_id:
             msg = "[Webhook] 当前请求数据中未包含 category 字段，跳过执行"
             logger.error(msg)
             return {"status": "failed", "message": msg}
-        
-        await refresh_fs_list(task_id)
         
         msg = f"[Webhook] 提交任务成功，任务将在 {wait} 秒后开始执行\n类别：{task_id}\n源文件路径：{full_path}"
         logger.info(msg)
@@ -104,6 +118,7 @@ async def run_single_task(
 
         # 定义一个异步任务，等待指定秒数后执行任务
         async def delayed_task():
+            await refresh_fs_list(task_id, "/" + name)
             await asyncio.sleep(wait)  # 等待指定的秒数
             msg = f"[Webhook] 任务开始执行\n类别：{task_id}\n源文件路径：{full_path}"
             logger.info(msg)
