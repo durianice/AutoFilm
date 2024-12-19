@@ -3,7 +3,7 @@ from typing import Dict
 from fastapi import APIRouter, Depends, HTTPException, Path
 from pydantic import BaseModel, Field
 from app.api.routes import execute_single_task
-from app.core import settings
+from app.core import settings, logger
 
 # 验证路径 token
 def verify_path_token(path_token: str = Path(..., description="Path token for authentication")):
@@ -40,13 +40,21 @@ class WebhookRequest(BaseModel):
 @router.post("/single")
 async def run_single_task(request: WebhookRequest, _: str = Depends(verify_path_token)):
     if not request or not request.data or not request.type_:
-        return {"status": "failed", "message": "未指定请求数据，跳过执行"}
-    if request.type_ != "metadata.scrape.complete":
-        return {"status": "failed", "message": f"当前类型：{request.type_}，跳过执行"}
+        msg = "[Webhook] 未指定请求数据，跳过执行"
+        logger.error(msg)
+        return {"status": "failed", "message": msg}
+    if request.type_ != "metadata.scrape":
+        msg = f"[Webhook] 当前类型：{request.type_}，跳过执行"
+        logger.error(msg)
+        return {"status": "failed", "message": msg}
     request_data = request.data
     mediainfo = request_data.get("mediainfo", {})
     category = mediainfo.get("category", {})
     task_id = category
     if not task_id:
-        return {"status": "failed", "message": "当前请求数据中未包含 category 字段，跳过执行"}
+        msg = "[Webhook] 当前请求数据中未包含 category 字段，跳过执行"
+        logger.error(msg)
+        return {"status": "failed", "message": msg}
+    msg = f"[Webhook] 开始处理STRM文件\n类别：{task_id}"
+    logger.info(msg)
     return await execute_single_task(task_id)

@@ -5,6 +5,8 @@ Settings:
   API_PORT: 9001
   API_TOKEN: 12345
   WEBHOOK_TOKEN: 12345
+  TELEGRAM_API_KEY: 
+  TELEGRAM_USER_ID:
 
 Alist2StrmList:
   - id: 动漫                          # 标识 ID

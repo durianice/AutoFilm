@@ -10,6 +10,7 @@ import asyncio
 import os
 from typing import List, Optional
 from app.core.state import running_tasks
+from app.utils.bot import send_message
 
 api_key_header = APIKeyHeader(name="Authorization")
 
@@ -63,14 +64,19 @@ async def execute_single_task(task_id: str):
         raise HTTPException(status_code=404, detail=f"未找到 ID 为 {task_id} 的任务")
 
     try:
-        logger.info(f"触发 Alist2Strm 任务: {task_id}")
+        msg = f"触发 Alist2Strm 任务: {task_id}"
+        logger.info(msg)
+        await send_message(msg)
         running_tasks.add(task_id)
 
         # 创建异步任务并运行
         task = asyncio.create_task(Alist2Strm(**server).run())
 
         # 添加任务完成后的回调来清理运行状态
-        task.add_done_callback(lambda _: running_tasks.remove(task_id))
+        async def on_task_done(_):
+            running_tasks.remove(task_id)
+            await send_message(f"任务 {task_id} 已完成")
+        task.add_done_callback(lambda _: asyncio.create_task(on_task_done(_)))
 
         return {"status": "success", "message": f"任务 {task_id} 已提交"}
     except Exception as e:
@@ -78,6 +84,7 @@ async def execute_single_task(task_id: str):
         running_tasks.discard(task_id)
         error_msg = f"任务执行失败: {str(e)}\n{traceback.format_exc()}"
         logger.error(error_msg)
+        await send_message(f"[任务执行失败]\n{task_id}\n{error_msg}")
         raise HTTPException(status_code=500, detail=f"任务执行失败: {str(e)}")
 
 @router.post("/strm/run")

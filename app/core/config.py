@@ -23,6 +23,8 @@ class SettingManager:
     API_PORT: int = 9001
     API_TOKEN: str = "12345"
     WEBHOOK_TOKEN: str = "12345"
+    TELEGRAM_API_KEY: str = ""
+    TELEGRAM_USER_ID: str = ""
 
     def __init__(self) -> None:
         """
@@ -55,6 +57,8 @@ class SettingManager:
             self.API_PORT = content.get("API_PORT", 9001)
             self.API_TOKEN = content.get("API_TOKEN", "12345")
             self.WEBHOOK_TOKEN = content.get("WEBHOOK_TOKEN", "12345")
+            self.TELEGRAM_API_KEY = content.get("TELEGRAM_API_KEY", "")
+            self.TELEGRAM_USER_ID = content.get("TELEGRAM_USER_ID", "")
     @property
     def BASE_DIR(self) -> Path:
         """
