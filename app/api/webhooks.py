@@ -50,22 +50,24 @@ async def refresh_fs_list(task_id: str, sub_dir: str = "") -> dict:
     )
     """递归刷新文件列表缓存"""
     async def refresh_fs_list_task(path: str):
-        print(f"刷新文件列表：{path}")
+        logger.debug(f"[Webhook] 刷新子目录 {path} 的缓存")
         for path in await client.async_api_fs_list(path, refresh=True):
             if path.is_dir:
                 await refresh_fs_list_task(path.path)
 
     parent_path_list = await client.async_api_fs_list(server["source_dir"])
     sub_path = server["source_dir"] + sub_dir
-    refresh_flag = True
+    is_exist_sub_path = False
     for path in parent_path_list:
         if sub_path == path.path:
-            """子目录存在则刷新他的缓存"""
-            await refresh_fs_list_task(sub_path)
-        elif refresh_flag:
-            """子目录不存在则刷新一次父目录的缓存"""
-            await client.async_api_fs_list(server["source_dir"], refresh=True)
-            refresh_flag = False
+            is_exist_sub_path = True
+    if is_exist_sub_path:
+        logger.debug(f"[Webhook] 子目录 {sub_path} 存在，递归刷新子目录缓存")
+        await refresh_fs_list_task(sub_path)
+    else:
+        logger.debug(f"[Webhook] 子目录 {sub_path} 不存在，刷新父目录 {server['source_dir']} 的缓存")
+        await client.async_api_fs_list(server["source_dir"], refresh=True)
+    logger.debug(f"[Webhook] 刷新文件列表缓存完成")
 
 class WebhookRequest(BaseModel):
     data: Dict
@@ -81,6 +83,9 @@ async def run_single_task(
     wait: int = Query(default=5, ge=0, description="等待的秒数"),  # 新增 wait 参数，默认值为 5
     _: str = Depends(verify_path_token)
 ):
+    logger.debug(f"[Webhook] 请求数据：{request}")
+    logger.debug(f"[Webhook] 请求数据：{type_}")
+    logger.debug(f"[Webhook] 请求数据：{wait}")
     try:
         if not request or not request.data or not request.type_:
             msg = "[Webhook] 未指定请求数据，跳过执行"
@@ -104,6 +109,10 @@ async def run_single_task(
             msg = "[Webhook] 当前请求数据中未包含 fileitem 字段，跳过执行"
             logger.error(msg)
             return {"status": "failed", "message": msg}
+        
+        file_type = fileitem.get("type", "")
+        if file_type != "dir":
+            return {"status": "failed", "message": "当前文件类型不是目录，跳过执行"}
         
         category = mediainfo.get("category", {})
         full_path = fileitem.get("path", "")
