@@ -1,6 +1,6 @@
 import json
 from typing import Dict
-from fastapi import APIRouter, Depends, HTTPException, Path
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from pydantic import BaseModel, Field
 from app.api.routes import execute_single_task
 from app.core import settings, logger
@@ -38,15 +38,21 @@ class WebhookRequest(BaseModel):
         populate_by_name = True  # 允许通过字段名访问
 # 运行单个任务
 @router.post("/single")
-async def run_single_task(request: WebhookRequest, _: str = Depends(verify_path_token)):
+async def run_single_task(
+    request: WebhookRequest, 
+    type_: str = Query(default="nothing_to_do"),  # 从查询参数中获取 type，默认不执行
+    _: str = Depends(verify_path_token)
+):
     if not request or not request.data or not request.type_:
         msg = "[Webhook] 未指定请求数据，跳过执行"
         logger.error(msg)
         return {"status": "failed", "message": msg}
-    if request.type_ != "metadata.scrape":
-        msg = f"[Webhook] 当前类型：{request.type_}，跳过执行"
+    # 使用传入的查询参数 type_ 进行判断
+    if request.type_ != type_:
+        msg = f"[Webhook] 当前类型：{request.type_}，与指定类型 {type_} 不匹配，跳过执行"
         logger.error(msg)
         return {"status": "failed", "message": msg}
+
     request_data = request.data
     mediainfo = request_data.get("mediainfo", {})
     category = mediainfo.get("category", {})
@@ -55,6 +61,7 @@ async def run_single_task(request: WebhookRequest, _: str = Depends(verify_path_
         msg = "[Webhook] 当前请求数据中未包含 category 字段，跳过执行"
         logger.error(msg)
         return {"status": "failed", "message": msg}
+    
     msg = f"[Webhook] 开始处理STRM文件\n类别：{task_id}"
     logger.info(msg)
     return await execute_single_task(task_id)
