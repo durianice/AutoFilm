@@ -3,6 +3,8 @@ name: AutoFilm DEV
 on:
   workflow_dispatch:
   push:
+    branches:
+      - dev
     paths:
       - '**.py'
 
