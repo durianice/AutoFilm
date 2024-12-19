@@ -55,7 +55,7 @@ async def refresh_fs_list(task_id: str, sub_dir: str = "") -> dict:
             if path.is_dir:
                 await refresh_fs_list_task(path.path)
 
-    parent_path_list = await client.async_api_fs_list(server["source_dir"])
+    parent_path_list = await client.async_api_fs_list(server["source_dir"], refresh=True)
     sub_path = server["source_dir"] + sub_dir
     is_exist_sub_path = False
     for path in parent_path_list:
@@ -64,9 +64,9 @@ async def refresh_fs_list(task_id: str, sub_dir: str = "") -> dict:
     if is_exist_sub_path:
         logger.debug(f"[Webhook] 子目录 {sub_path} 存在，递归刷新子目录缓存")
         await refresh_fs_list_task(sub_path)
-    else:
-        logger.debug(f"[Webhook] 子目录 {sub_path} 不存在，刷新父目录 {server['source_dir']} 的缓存")
-        await client.async_api_fs_list(server["source_dir"], refresh=True)
+    # else:
+    #     logger.debug(f"[Webhook] 子目录 {sub_path} 不存在，刷新父目录 {server['source_dir']} 的缓存")
+    #     await client.async_api_fs_list(server["source_dir"], refresh=True)
     logger.debug(f"[Webhook] 刷新文件列表缓存完成")
 
 class WebhookRequest(BaseModel):
