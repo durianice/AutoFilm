@@ -83,9 +83,6 @@ async def run_single_task(
     wait: int = Query(default=5, ge=0, description="等待的秒数"),  # 新增 wait 参数，默认值为 5
     _: str = Depends(verify_path_token)
 ):
-    logger.debug(f"[Webhook] 请求数据：{request}")
-    logger.debug(f"[Webhook] 请求数据：{type_}")
-    logger.debug(f"[Webhook] 请求数据：{wait}")
     try:
         if not request or not request.data or not request.type_:
             msg = "[Webhook] 未指定请求数据，跳过执行"
@@ -97,6 +94,8 @@ async def run_single_task(
             msg = f"[Webhook] 当前类型：{request.type_}，与指定类型 {type_} 不匹配，跳过执行"
             logger.error(msg)
             return {"status": "failed", "message": msg}
+        
+        logger.debug(f"[Webhook] 请求数据：{request}")
 
         mediainfo = request.data.get("mediainfo", {})
         if not mediainfo:
