@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from pydantic import BaseModel, Field
 from app.api.routes import execute_single_task
 from app.core import settings, logger
+from app.modules.alist.v3.client import AlistClient
 from app.utils.bot import send_message
 
 # 验证路径 token
@@ -32,6 +33,23 @@ async def test(_: str = Depends(verify_path_token)):
         "message": "Webhooks 服务正常运行"
     }
 
+
+async def refresh_fs_list(task_id: str) -> dict:
+    """
+    刷新文件列表缓存
+    """
+    server = next((s for s in settings.AlistServerList if s["id"] == task_id), None)
+    if not server:
+        raise HTTPException(status_code=404, detail=f"未找到 ID 为 {task_id} 的任务")
+    url = server.get("url", "")
+    username = server.get("username", "")
+    password = server.get("password", "")
+    token = server.get("token", "")
+    client = AlistClient(
+        url, username, password, token
+    )
+    return await client.async_api_fs_list(server["source_dir"], refresh=True)  
+
 class WebhookRequest(BaseModel):
     data: Dict
     type_: str = Field(..., alias="type")  # 使用 type_ 作为字段名，type 作为别名
@@ -43,54 +61,62 @@ class WebhookRequest(BaseModel):
 async def run_single_task(
     request: WebhookRequest, 
     type_: str = Query(default="nothing_to_do"),  # 从查询参数中获取 type，默认不执行
-    wait: int = Query(default=0, ge=0, description="等待的秒数"),  # 新增 wait 参数，默认值为 0
+    wait: int = Query(default=5, ge=0, description="等待的秒数"),  # 新增 wait 参数，默认值为 5
     _: str = Depends(verify_path_token)
 ):
-    if not request or not request.data or not request.type_:
-        msg = "[Webhook] 未指定请求数据，跳过执行"
-        logger.error(msg)
-        return {"status": "failed", "message": msg}
+    try:
+        if not request or not request.data or not request.type_:
+            msg = "[Webhook] 未指定请求数据，跳过执行"
+            logger.error(msg)
+            return {"status": "failed", "message": msg}
     
-    # 使用传入的查询参数 type_ 进行判断
-    if request.type_ != type_:
-        msg = f"[Webhook] 当前类型：{request.type_}，与指定类型 {type_} 不匹配，跳过执行"
-        logger.error(msg)
-        return {"status": "failed", "message": msg}
+        # 使用传入的查询参数 type_ 进行判断
+        if request.type_ != type_:
+            msg = f"[Webhook] 当前类型：{request.type_}，与指定类型 {type_} 不匹配，跳过执行"
+            logger.error(msg)
+            return {"status": "failed", "message": msg}
 
-    request_data = request.data
-    mediainfo = request_data.get("mediainfo", {})
-    if not mediainfo:
-        msg = "[Webhook] 当前请求数据中未包含 mediainfo 字段，跳过执行"
-        logger.error(msg)
-        return {"status": "failed", "message": msg}
-    fileitem = request_data.get("fileitem", {})
-    if not fileitem:
-        msg = "[Webhook] 当前请求数据中未包含 fileitem 字段，跳过执行"
-        logger.error(msg)
-        return {"status": "failed", "message": msg}
-    
-    category = mediainfo.get("category", {})
-    full_path = fileitem.get("path", "")
-    task_id = category
-    if not task_id:
-        msg = "[Webhook] 当前请求数据中未包含 category 字段，跳过执行"
-        logger.error(msg)
-        return {"status": "failed", "message": msg}
-    
-    msg = f"[Webhook] 提交任务成功，任务将在 {wait} 秒后开始执行\n类别：{task_id}\n源文件路径：{full_path}"
-    logger.info(msg)
-    await send_message(msg)
-
-    # 定义一个异步任务，等待指定秒数后执行任务
-    async def delayed_task():
-        await asyncio.sleep(wait)  # 等待指定的秒数
-        msg = f"[Webhook] 任务开始执行\n类别：{task_id}\n源文件路径：{full_path}"
+        mediainfo = request.data.get("mediainfo", {})
+        if not mediainfo:
+            msg = "[Webhook] 当前请求数据中未包含 mediainfo 字段，跳过执行"
+            logger.error(msg)
+            return {"status": "failed", "message": msg}
+        
+        fileitem = request.data.get("fileitem", {})
+        if not fileitem:
+            msg = "[Webhook] 当前请求数据中未包含 fileitem 字段，跳过执行"
+            logger.error(msg)
+            return {"status": "failed", "message": msg}
+        
+        category = mediainfo.get("category", {})
+        full_path = fileitem.get("path", "")
+        task_id = category
+        if not task_id:
+            msg = "[Webhook] 当前请求数据中未包含 category 字段，跳过执行"
+            logger.error(msg)
+            return {"status": "failed", "message": msg}
+        
+        await refresh_fs_list(task_id)
+        
+        msg = f"[Webhook] 提交任务成功，任务将在 {wait} 秒后开始执行\n类别：{task_id}\n源文件路径：{full_path}"
         logger.info(msg)
         await send_message(msg)
-        await execute_single_task(task_id)  # 执行任务
 
-    # 使用 asyncio.create_task 创建异步任务
-    asyncio.create_task(delayed_task())
+        # 定义一个异步任务，等待指定秒数后执行任务
+        async def delayed_task():
+            await asyncio.sleep(wait)  # 等待指定的秒数
+            msg = f"[Webhook] 任务开始执行\n类别：{task_id}\n源文件路径：{full_path}"
+            logger.info(msg)
+            await send_message(msg)
+            await execute_single_task(task_id)  # 执行任务
 
-    # 立即返回任务提交成功的信息
-    return {"status": "success", "message": msg}
+        # 使用 asyncio.create_task 创建异步任务
+        asyncio.create_task(delayed_task())
+
+        # 立即返回任务提交成功的信息
+        return {"status": "success", "message": msg}
+    except Exception as e:
+        msg = f"[Webhook] 任务提交失败，错误信息：{e}"
+        logger.error(msg)
+        return {"status": "failed", "message": msg}
+

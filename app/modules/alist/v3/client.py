@@ -185,7 +185,7 @@ class AlistClient(metaclass=Multiton):
         except:
             raise RuntimeError("获取用户信息失败")
 
-    async def async_api_fs_list(self, dir_path: str) -> list[AlistPath]:
+    async def async_api_fs_list(self, dir_path: str, refresh: bool = False) -> list[AlistPath]:
         """
         获取文件列表
 
@@ -200,7 +200,7 @@ class AlistClient(metaclass=Multiton):
             "password": "",
             "page": 1,
             "per_page": 0,
-            "refresh": False,
+            "refresh": refresh,
         }
 
         resp = await self.__post(self.url + "/api/fs/list", json=json)
@@ -216,7 +216,7 @@ class AlistClient(metaclass=Multiton):
                 f'获取目录 {dir_path} 的文件列表失败，错误信息：{result["message"]}'
             )
 
-        logger.debug(f"获取目录 {dir_path} 的文件列表成功")
+        logger.debug(f"获取目录 {dir_path} 的文件列表成功，缓存刷新：{refresh}")
 
         if result["data"]["total"] == 0:
             return []
