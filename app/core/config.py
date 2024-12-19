@@ -22,6 +22,7 @@ class SettingManager:
     API_HOST: str = "0.0.0.0"
     API_PORT: int = 9001
     API_TOKEN: str = "12345"
+    WEBHOOK_TOKEN: str = "12345"
 
     def __init__(self) -> None:
         """
@@ -53,7 +54,7 @@ class SettingManager:
             self.API_HOST = content.get("API_HOST", "0.0.0.0")
             self.API_PORT = content.get("API_PORT", 9001)
             self.API_TOKEN = content.get("API_TOKEN", "12345")
-
+            self.WEBHOOK_TOKEN = content.get("WEBHOOK_TOKEN", "12345")
     @property
     def BASE_DIR(self) -> Path:
         """

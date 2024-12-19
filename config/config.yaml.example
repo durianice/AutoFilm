@@ -4,6 +4,7 @@ Settings:
   API_HOST: "0.0.0.0"                
   API_PORT: 9001
   API_TOKEN: 12345
+  WEBHOOK_TOKEN: 12345
 
 Alist2StrmList:
   - id: 动漫                          # 标识 ID

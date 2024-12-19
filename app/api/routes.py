@@ -43,64 +43,55 @@ async def test():
 class TaskRequest(BaseModel):
     task_id: str
 
-@router.post("/strm/run")
-async def trigger_alist2strm(request: TaskRequest = None):
+async def execute_single_task(task_id: str):
     """
-    手动执行 Alist2Strm 任务
-    
-    :param request: 任务请求参数，可选。若不提供则运行所有任务
+    执行指定的任务
+
+    :param task_id: 任务 ID
+    :return: 执行结果
     """
     if not settings.AlistServerList:
         raise HTTPException(status_code=404, detail="未检测到任何 Alist2Strm 模块配置")
 
-    try:
-        # 运行单个任务
-        if request and request.task_id:
-            task_id = request.task_id
-            if task_id in running_tasks:
-                return {"status": "warning", "message": f"任务 {task_id} 正在运行中，跳过本次手动执行"}
-                
-            server = next((s for s in settings.AlistServerList if s["id"] == task_id), None)
-            if not server:
-                raise HTTPException(status_code=404, detail=f"未找到 ID 为 {task_id} 的任务")
-            
-            logger.info(f"API 触发 Alist2Strm 任务: {task_id}")
-            running_tasks.add(task_id)
-            task = asyncio.create_task(Alist2Strm(**server).run())
-            
-            # 添加任务完成后的回调来清理运行状态
-            task.add_done_callback(lambda _: running_tasks.remove(task_id))
-            return {"status": "success", "message": f"任务 {task_id} 已提交"}
-        
-        return {"status": "failed", "message": "未指定 task_id"}
+    # 检查任务是否正在运行
+    if task_id in running_tasks:
+        return {"status": "warning", "message": f"任务 {task_id} 正在运行中，跳过本次手动执行"}
 
-        # 运行所有任务（需要可以取消注释）
-        # submitted_tasks = []
-        # skipped_tasks = []
-        # for server in settings.AlistServerList:
-        #     task_id = server['id']
-        #     if task_id in running_tasks:
-        #         skipped_tasks.append(task_id)
-        #         continue
-                
-        #     logger.info(f"API 触发 Alist2Strm 任务: {task_id}")
-        #     running_tasks.add(task_id)
-        #     task = asyncio.create_task(Alist2Strm(**server).run())
-        #     task.add_done_callback(lambda _: running_tasks.remove(task_id))
-        #     submitted_tasks.append(task_id)
-            
-        # message = "所有任务已提交"
-        # if skipped_tasks:
-        #     message = f"部分任务已提交。跳过正在运行的任务: {', '.join(skipped_tasks)}"
-        # return {"status": "success", "message": message}
-            
+    # 查找任务配置
+    server = next((s for s in settings.AlistServerList if s["id"] == task_id), None)
+    if not server:
+        raise HTTPException(status_code=404, detail=f"未找到 ID 为 {task_id} 的任务")
+
+    try:
+        logger.info(f"触发 Alist2Strm 任务: {task_id}")
+        running_tasks.add(task_id)
+
+        # 创建异步任务并运行
+        task = asyncio.create_task(Alist2Strm(**server).run())
+
+        # 添加任务完成后的回调来清理运行状态
+        task.add_done_callback(lambda _: running_tasks.remove(task_id))
+
+        return {"status": "success", "message": f"任务 {task_id} 已提交"}
     except Exception as e:
         # 确保发生错误时清理运行状态
-        if request and request.task_id:
-            running_tasks.discard(request.task_id)
+        running_tasks.discard(task_id)
         error_msg = f"任务执行失败: {str(e)}\n{traceback.format_exc()}"
         logger.error(error_msg)
         raise HTTPException(status_code=500, detail=f"任务执行失败: {str(e)}")
+
+@router.post("/strm/run")
+async def trigger_alist2strm(request: TaskRequest = None):
+    """
+    手动执行 Alist2Strm 任务
+
+    :param request: 任务请求参数，可选。若不提供则运行所有任务
+    """
+    if not request or not request.task_id:
+        return {"status": "failed", "message": "未指定 task_id"}
+
+    # 调用封装的任务执行逻辑
+    return await execute_single_task(request.task_id)
 
 class LogResponse(BaseModel):
     files: List[str]
