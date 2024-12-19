@@ -57,13 +57,15 @@ async def refresh_fs_list(task_id: str, sub_dir: str = "") -> dict:
 
     parent_path_list = await client.async_api_fs_list(server["source_dir"])
     sub_path = server["source_dir"] + sub_dir
+    refresh_flag = True
     for path in parent_path_list:
         if sub_path == path.path:
             """子目录存在则刷新他的缓存"""
             await refresh_fs_list_task(sub_path)
-        else:
-            """子目录不存在则刷新父目录的缓存"""
+        elif refresh_flag:
+            """子目录不存在则刷新一次父目录的缓存"""
             await client.async_api_fs_list(server["source_dir"], refresh=True)
+            refresh_flag = False
 
 class WebhookRequest(BaseModel):
     data: Dict
