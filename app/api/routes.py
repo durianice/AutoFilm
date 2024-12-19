@@ -44,7 +44,7 @@ async def test():
 class TaskRequest(BaseModel):
     task_id: str
 
-async def execute_single_task(task_id: str):
+async def execute_single_task(task_id: str, refresh: bool = False):
     """
     执行指定的任务
 
@@ -70,7 +70,7 @@ async def execute_single_task(task_id: str):
         running_tasks.add(task_id)
 
         # 创建异步任务并运行
-        task = asyncio.create_task(Alist2Strm(**server).run())
+        task = asyncio.create_task(Alist2Strm(**server).run(refresh=refresh))
 
         # 添加任务完成后的回调来清理运行状态
         async def on_task_done(_):

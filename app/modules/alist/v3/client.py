@@ -366,6 +366,7 @@ class AlistClient(metaclass=Multiton):
         dir_path: str,
         is_detail: bool = True,
         filter: Callable[[AlistPath], bool] = lambda x: True,
+        refresh: bool = False,
     ) -> AsyncGenerator[AlistPath, None]:
         """
         异步路径列表生成器
@@ -377,10 +378,10 @@ class AlistClient(metaclass=Multiton):
         :return: AlistPath 对象生成器
         """
 
-        for path in await self.async_api_fs_list(dir_path):
+        for path in await self.async_api_fs_list(dir_path, refresh=refresh):
             if path.is_dir:
                 async for child_path in self.iter_path(
-                    dir_path=path.path, is_detail=is_detail, filter=filter
+                    dir_path=path.path, is_detail=is_detail, filter=filter, refresh=refresh
                 ):
                     yield child_path
 

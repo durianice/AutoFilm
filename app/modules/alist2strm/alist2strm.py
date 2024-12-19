@@ -85,7 +85,7 @@ class Alist2Strm:
         self.sync_server = sync_server
         self.strm_content_prefix = strm_content_prefix
 
-    async def run(self) -> None:
+    async def run(self, refresh: bool = False) -> None:
         """
         处理主体
         """
@@ -134,7 +134,7 @@ class Alist2Strm:
                     self.url, self.__username, self.__password, self.__tokenen
                 )
                 async for path in client.iter_path(
-                    dir_path=self.source_dir, is_detail=is_detail, filter=filter
+                    dir_path=self.source_dir, is_detail=is_detail, filter=filter, refresh=refresh
                 ):
                     tg.create_task(self.__file_processer(path))
         logger.info("Alist2Strm处理完成")

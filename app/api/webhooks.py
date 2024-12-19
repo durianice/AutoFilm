@@ -68,7 +68,7 @@ async def refresh_fs_list(task_id: str, sub_dir: str = "") -> dict:
     if is_exist_sub_path:
         logger.debug(f"[Webhook] 子目录 {sub_path} 存在，递归刷新子目录缓存")
         await refresh_fs_list_task(sub_path)
-        
+
     logger.debug(f"[Webhook] 刷新文件列表缓存完成")
 
 class WebhookRequest(BaseModel):
@@ -136,7 +136,7 @@ async def run_single_task(
             msg = f"[Webhook] 任务开始执行 - {info}"
             logger.info(msg)
             await send_message(msg)
-            await execute_single_task(task_id)  # 执行任务
+            await execute_single_task(task_id, refresh=True)  # 执行任务
 
         # 使用 asyncio.create_task 创建异步任务
         asyncio.create_task(delayed_task())
