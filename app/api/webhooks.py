@@ -131,14 +131,14 @@ async def run_single_task(
 
         # 定义一个异步任务，等待指定秒数后执行任务
         async def delayed_task():
-            await asyncio.sleep(wait)  # 等待指定的秒数
+            await asyncio.sleep(wait)
             await refresh_fs_list(task_id, "/" + name)
             msg = f"[Webhook] 任务开始执行 - {info}"
             logger.info(msg)
             await send_message(msg)
-            await execute_single_task(task_id, refresh=False)  # 执行任务
+            await execute_single_task(task_id, refresh=False, sub_dir=name)
+            await send_message(f"{category} - {name} 已添加到 Emby 媒体库")
 
-        # 使用 asyncio.create_task 创建异步任务
         asyncio.create_task(delayed_task())
 
         # 立即返回任务提交成功的信息

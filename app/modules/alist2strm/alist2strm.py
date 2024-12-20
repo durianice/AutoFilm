@@ -31,6 +31,7 @@ class Alist2Strm:
         max_downloaders: int = 5,
         sync_server: bool = False,
         strm_content_prefix: str = "",
+        sub_dir: str = "",
         **_,
     ) -> None:
         """
@@ -60,6 +61,12 @@ class Alist2Strm:
 
         self.source_dir = source_dir
         self.target_dir = Path(target_dir)
+        if sub_dir:
+            self.source_dir = self.source_dir + "/" + sub_dir
+            self.target_dir = self.target_dir / sub_dir
+
+        logger.debug(f"配置目录 {self.source_dir}")
+        logger.debug(f"本地目录 {self.target_dir}")
 
         self.flatten_mode = flatten_mode
         if flatten_mode:
@@ -133,6 +140,7 @@ class Alist2Strm:
                 client = AlistClient(
                     self.url, self.__username, self.__password, self.__tokenen
                 )
+                logger.info(f"开始处理 {self.source_dir}")
                 async for path in client.iter_path(
                     dir_path=self.source_dir, is_detail=is_detail, filter=filter, refresh=refresh
                 ):

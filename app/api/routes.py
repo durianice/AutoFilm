@@ -8,7 +8,7 @@ import traceback
 from contextlib import suppress
 import asyncio
 import os
-from typing import List, Optional
+from typing import Dict, List, Optional, Set
 from app.core.state import running_tasks
 from app.utils.bot import send_message
 
@@ -41,22 +41,65 @@ async def test():
         "message": "API 服务正常运行"
     }
 
+# 全局变量
+__max_workers = 1  # 每次只允许一个任务运行
+semaphore = asyncio.Semaphore(__max_workers)  # 信号量控制并发
+task_queue = asyncio.Queue()  # 任务队列，用于排队任务
+running_tasks: Set[str] = set()  # 当前正在运行的任务
+task_status: Dict[str, str] = {}  # 任务状态跟踪（运行中、排队中）
+
+# 定义任务请求模型
 class TaskRequest(BaseModel):
     task_id: str
 
-async def execute_single_task(task_id: str, refresh: bool = False):
+async def task_worker():
     """
-    执行指定的任务
+    任务消费者，负责从队列中取出任务并执行。
+    """
+    while True:
+        task_id, new_server, refresh = await task_queue.get()
+        try:
+            # 更新任务状态为 "运行中"
+            task_status[task_id] = "运行中"
+            running_tasks.add(task_id)
+
+            # 打印当前任务状态
+            logger.info(f"当前正在运行的任务: {list(running_tasks)}")
+            logger.info(f"排队中的任务数: {task_queue.qsize()}")
+
+            # 使用信号量限制并发
+            async with semaphore:
+                logger.info(f"开始执行任务: {task_id}")
+                await Alist2Strm(**new_server).run(refresh=refresh)
+                logger.info(f"任务 {task_id} 已完成")
+                await send_message(f"任务 {task_id} 已完成")
+        except Exception as e:
+            error_msg = f"任务 {task_id} 执行失败: {str(e)}\n{traceback.format_exc()}"
+            logger.error(error_msg)
+            await send_message(f"[任务执行失败]\n{task_id}\n{error_msg}")
+        finally:
+            # 清理任务状态
+            running_tasks.discard(task_id)
+            task_status.pop(task_id, None)
+            task_queue.task_done()
+            
+asyncio.create_task(task_worker())
+
+async def execute_single_task(task_id: str, refresh: bool = False, sub_dir: str = ""):
+    """
+    提交任务到队列
 
     :param task_id: 任务 ID
-    :return: 执行结果
+    :param refresh: 是否刷新
+    :param sub_dir: 子目录
+    :return: 提交结果
     """
     if not settings.AlistServerList:
         raise HTTPException(status_code=404, detail="未检测到任何 Alist2Strm 模块配置")
 
-    # 检查任务是否正在运行
-    if task_id in running_tasks:
-        return {"status": "warning", "message": f"任务 {task_id} 正在运行中，跳过本次手动执行"}
+    # 检查任务是否已经在运行或排队
+    if task_id in running_tasks or task_id in task_status:
+        return {"status": "warning", "message": f"任务 {task_id} 已在运行或排队中"}
 
     # 查找任务配置
     server = next((s for s in settings.AlistServerList if s["id"] == task_id), None)
@@ -67,25 +110,24 @@ async def execute_single_task(task_id: str, refresh: bool = False):
         msg = f"触发 Alist2Strm 任务: {task_id}"
         logger.info(msg)
         await send_message(msg)
-        running_tasks.add(task_id)
 
-        # 创建异步任务并运行
-        task = asyncio.create_task(Alist2Strm(**server).run(refresh=refresh))
+        # 将任务添加到队列并更新状态为 "排队中"
+        new_server = server.copy()
+        new_server["sub_dir"] = sub_dir
+        await task_queue.put((task_id, new_server, refresh))
+        task_status[task_id] = "排队中"
 
-        # 添加任务完成后的回调来清理运行状态
-        async def on_task_done(_):
-            running_tasks.remove(task_id)
-            await send_message(f"任务 {task_id} 已完成")
-        task.add_done_callback(lambda _: asyncio.create_task(on_task_done(_)))
+        # 打印当前任务状态
+        logger.info(f"任务 {task_id} 已提交到队列")
+        logger.info(f"当前正在运行的任务: {list(running_tasks)}")
+        logger.info(f"排队中的任务数: {task_queue.qsize()}")
 
-        return {"status": "success", "message": f"任务 {task_id} 已提交"}
+        return {"status": "success", "message": f"任务 {task_id} 已提交到队列"}
     except Exception as e:
-        # 确保发生错误时清理运行状态
-        running_tasks.discard(task_id)
-        error_msg = f"任务执行失败: {str(e)}\n{traceback.format_exc()}"
+        error_msg = f"任务提交失败: {str(e)}\n{traceback.format_exc()}"
         logger.error(error_msg)
-        await send_message(f"[任务执行失败]\n{task_id}\n{error_msg}")
-        raise HTTPException(status_code=500, detail=f"任务执行失败: {str(e)}")
+        await send_message(f"[任务提交失败]\n{task_id}\n{error_msg}")
+        raise HTTPException(status_code=500, detail=f"任务提交失败: {str(e)}")
 
 @router.post("/strm/run")
 async def trigger_alist2strm(request: TaskRequest = None):
