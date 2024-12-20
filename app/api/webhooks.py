@@ -82,7 +82,7 @@ class WebhookRequest(BaseModel):
 async def run_single_task(
     request: WebhookRequest, 
     type_: str = Query(default="nothing_to_do"),  # 从查询参数中获取 type，默认不执行
-    wait: int = Query(default=5, ge=0, description="等待的秒数"),  # 新增 wait 参数，默认值为 5
+    wait: int = Query(default=180, ge=0, description="等待的秒数"),  # 新增 wait 参数，默认值为 180
     _: str = Depends(verify_path_token)
 ):
     try:
@@ -123,6 +123,10 @@ async def run_single_task(
             msg = "[Webhook] 当前请求数据中未包含 category 字段，跳过执行"
             logger.error(msg)
             return {"status": "failed", "message": msg}
+        
+        if wait < 180:
+            wait = 180
+            logger.warning(f"[Webhook] 由于元文件同步延迟，等待时间最少 180 秒，已自动设置为 180 秒")
         
         info = f"类别：{task_id} 源文件路径：{full_path}"
         msg = f"[Webhook] 提交任务成功，任务将在 {wait} 秒后开始执行 - {info}"
