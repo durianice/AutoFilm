@@ -4,7 +4,7 @@ from app.core import settings
 api_key = settings.TELEGRAM_API_KEY
 user_id = settings.TELEGRAM_USER_ID
 
-prefix = "**【AutoFilm 任务通知】**\n"
+prefix = "AutoFilm 任务通知\n"
 
 async def send_message(text: str):
     if api_key and user_id:

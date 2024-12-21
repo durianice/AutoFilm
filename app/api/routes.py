@@ -79,7 +79,7 @@ async def task_worker():
         except Exception as e:
             error_msg = f"任务 {task_id} 执行失败: {str(e)}\n{traceback.format_exc()}"
             logger.error(error_msg)
-            await send_message(f"[任务执行失败]\n{task_id}\n{error_msg}")
+            await send_message(f"[任务执行失败]\n{task_id}\n{error_msg} 当前任务数: {len(running_tasks)} 排队任务数: {task_queue.qsize()}")
         finally:
             # 清理任务状态
             running_tasks.discard(task_id)
@@ -111,10 +111,6 @@ async def execute_single_task(task_id: str, refresh: bool = False, sub_dir: str 
         raise HTTPException(status_code=404, detail=f"未找到 ID 为 {task_id} 的任务")
 
     try:
-        msg = f"触发 Alist2Strm 任务: {task_id}"
-        logger.info(msg)
-        await send_message(msg)
-
         # 将任务添加到队列并更新状态为 "排队中"
         new_server = server.copy()
         new_server["sub_dir"] = sub_dir
@@ -123,9 +119,9 @@ async def execute_single_task(task_id: str, refresh: bool = False, sub_dir: str 
         task_status[task_id] = "排队中"
 
         # 打印当前任务状态
-        logger.info(f"任务 {task_id} 已提交到队列")
-        logger.info(f"当前正在运行的任务: {list(running_tasks)}")
-        logger.info(f"排队中的任务数: {task_queue.qsize()}")
+        msg = f"任务 {task_id} 已提交到队列 当前任务数: {len(running_tasks)} 排队任务数: {task_queue.qsize()}"
+        logger.info(msg)
+        await send_message(msg)
 
         return {"status": "success", "message": f"任务 {task_id} 已提交到队列"}
     except Exception as e:
