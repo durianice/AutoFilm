@@ -57,23 +57,24 @@ async def task_worker():
     任务消费者，负责从队列中取出任务并执行。
     """
     while True:
-        task_id, new_server, refresh = await task_queue.get()
+        task_id, new_server = await task_queue.get()
         try:
             # 更新任务状态为 "运行中"
             task_status[task_id] = "运行中"
             running_tasks.add(task_id)
 
             # 打印当前任务状态
-            logger.info(f"当前正在运行的任务: {list(running_tasks)}")
-            logger.info(f"排队中的任务数: {task_queue.qsize()}")
+            msg = f"任务 {task_id} 已提交到队列 当前任务数: {len(running_tasks)} 排队任务数: {task_queue.qsize()}"
+            logger.info(msg)
+            await send_message(msg)
 
             # 使用信号量限制并发
             async with semaphore:
                 logger.info(f"开始执行任务: {task_id}")
-                await Alist2Strm(**new_server).run(refresh=refresh)
+                await Alist2Strm(**new_server).run()
                 msg = f"任务 {task_id} 已完成"
-                if new_server.get("meta_str"):
-                    msg += f" - {new_server.get('meta_str')}"
+                if new_server.get("done_msg"):
+                    msg += f" - {new_server.get('done_msg')}"
                 logger.info(msg)
                 await send_message(msg)
         except Exception as e:
@@ -88,14 +89,13 @@ async def task_worker():
             
 asyncio.create_task(task_worker())
 
-async def execute_single_task(task_id: str, refresh: bool = False, sub_dir: str = "", meta_str: str = ""):
+async def execute_single_task(task_id: str, sub_dir: str = "", done_msg: str = ""):
     """
     提交任务到队列
 
     :param task_id: 任务 ID
-    :param refresh: 是否刷新
     :param sub_dir: 子目录
-    :param meta_str: 元数据
+    :param done_msg: 任务完成回调消息
     :return: 提交结果
     """
     if not settings.AlistServerList:
@@ -113,16 +113,14 @@ async def execute_single_task(task_id: str, refresh: bool = False, sub_dir: str 
     try:
         # 将任务添加到队列并更新状态为 "排队中"
         new_server = server.copy()
-        new_server["sub_dir"] = sub_dir
-        new_server["meta_str"] = meta_str
-        await task_queue.put((task_id, new_server, refresh))
+        new_server["done_msg"] = done_msg
+        if sub_dir:
+            new_server["source_dir"] = new_server["source_dir"] + "/" + sub_dir
+            new_server["target_dir"] = new_server["target_dir"] + "/" + sub_dir
+        new_server["source_dir"] = new_server["source_dir"].replace("//", "/")
+        new_server["target_dir"] = new_server["target_dir"].replace("//", "/")
+        await task_queue.put((task_id, new_server))
         task_status[task_id] = "排队中"
-
-        # 打印当前任务状态
-        msg = f"任务 {task_id} 已提交到队列 当前任务数: {len(running_tasks)} 排队任务数: {task_queue.qsize()}"
-        logger.info(msg)
-        await send_message(msg)
-
         return {"status": "success", "message": f"任务 {task_id} 已提交到队列"}
     except Exception as e:
         error_msg = f"任务提交失败: {str(e)}\n{traceback.format_exc()}"

@@ -31,7 +31,6 @@ class Alist2Strm:
         max_downloaders: int = 5,
         sync_server: bool = False,
         strm_content_prefix: str = "",
-        sub_dir: str = "",
         **_,
     ) -> None:
         """
@@ -61,9 +60,6 @@ class Alist2Strm:
 
         self.source_dir = source_dir
         self.target_dir = Path(target_dir)
-        if sub_dir:
-            self.source_dir = self.source_dir + "/" + sub_dir
-            self.target_dir = self.target_dir / sub_dir
 
         logger.debug(f"配置目录 {self.source_dir}")
         logger.debug(f"本地目录 {self.target_dir}")
@@ -92,7 +88,7 @@ class Alist2Strm:
         self.sync_server = sync_server
         self.strm_content_prefix = strm_content_prefix
 
-    async def run(self, refresh: bool = False) -> None:
+    async def run(self) -> None:
         """
         处理主体
         """
@@ -142,7 +138,7 @@ class Alist2Strm:
                 )
                 logger.info(f"开始处理 {self.source_dir}")
                 async for path in client.iter_path(
-                    dir_path=self.source_dir, is_detail=is_detail, filter=filter, refresh=refresh
+                    dir_path=self.source_dir, is_detail=is_detail, filter=filter
                 ):
                     tg.create_task(self.__file_processer(path))
         logger.info("Alist2Strm处理完成")
