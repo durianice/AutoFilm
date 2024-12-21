@@ -216,7 +216,11 @@ class AlistClient(metaclass=Multiton):
                 f'获取目录 {dir_path} 的文件列表失败，错误信息：{result["message"]}'
             )
 
-        logger.debug(f"获取目录 {dir_path} 的文件列表成功，缓存刷新：{refresh}")
+        file_list = []
+        for alist_path in result["data"]["content"]:
+            file_list.append(alist_path["name"])
+
+        logger.debug(f"获取目录 {dir_path} 的文件列表成功，刷新缓存：{refresh}，文件列表：{file_list}")
 
         if result["data"]["total"] == 0:
             return []
