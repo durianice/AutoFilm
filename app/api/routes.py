@@ -71,8 +71,11 @@ async def task_worker():
             async with semaphore:
                 logger.info(f"开始执行任务: {task_id}")
                 await Alist2Strm(**new_server).run(refresh=refresh)
-                logger.info(f"任务 {task_id} 已完成")
-                await send_message(f"任务 {task_id} 已完成")
+                msg = f"任务 {task_id} 已完成"
+                if new_server.get("meta_str"):
+                    msg += f" - {new_server.get('meta_str')}"
+                logger.info(msg)
+                await send_message(msg)
         except Exception as e:
             error_msg = f"任务 {task_id} 执行失败: {str(e)}\n{traceback.format_exc()}"
             logger.error(error_msg)
@@ -85,13 +88,14 @@ async def task_worker():
             
 asyncio.create_task(task_worker())
 
-async def execute_single_task(task_id: str, refresh: bool = False, sub_dir: str = ""):
+async def execute_single_task(task_id: str, refresh: bool = False, sub_dir: str = "", meta_str: str = ""):
     """
     提交任务到队列
 
     :param task_id: 任务 ID
     :param refresh: 是否刷新
     :param sub_dir: 子目录
+    :param meta_str: 元数据
     :return: 提交结果
     """
     if not settings.AlistServerList:
@@ -114,6 +118,7 @@ async def execute_single_task(task_id: str, refresh: bool = False, sub_dir: str 
         # 将任务添加到队列并更新状态为 "排队中"
         new_server = server.copy()
         new_server["sub_dir"] = sub_dir
+        new_server["meta_str"] = meta_str
         await task_queue.put((task_id, new_server, refresh))
         task_status[task_id] = "排队中"
 

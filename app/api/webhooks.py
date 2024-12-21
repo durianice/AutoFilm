@@ -88,13 +88,13 @@ async def run_single_task(
     try:
         if not request or not request.data or not request.type_:
             msg = "[Webhook] 未指定请求数据，跳过执行"
-            logger.error(msg)
+            logger.warning(msg)
             return {"status": "failed", "message": msg}
     
         # 使用传入的查询参数 type_ 进行判断
         if request.type_ != type_:
             msg = f"[Webhook] 当前类型：{request.type_}，与指定类型 {type_} 不匹配，跳过执行"
-            logger.error(msg)
+            logger.warning(msg)
             return {"status": "failed", "message": msg}
         
         logger.debug(f"[Webhook] 请求数据：{request}")
@@ -102,18 +102,26 @@ async def run_single_task(
         mediainfo = request.data.get("mediainfo", {})
         if not mediainfo:
             msg = "[Webhook] 当前请求数据中未包含 mediainfo 字段，跳过执行"
-            logger.error(msg)
+            logger.warning(msg)
             return {"status": "failed", "message": msg}
         
         fileitem = request.data.get("fileitem", {})
         if not fileitem:
             msg = "[Webhook] 当前请求数据中未包含 fileitem 字段，跳过执行"
-            logger.error(msg)
+            logger.warning(msg)
             return {"status": "failed", "message": msg}
         
         file_type = fileitem.get("type", "")
         if file_type != "dir":
-            return {"status": "failed", "message": "当前文件类型不是目录，跳过执行"}
+            msg = "[Webhook] 当前文件类型不是目录，跳过执行"
+            logger.warning(msg)
+            return {"status": "failed", "message": msg}
+        
+        media_type = mediainfo.get("type", "")
+        if media_type == "电视剧" and "Season" in name:
+            msg = "[Webhook] 当前路径是电视剧季集，跳过执行"
+            logger.warning(msg)
+            return {"status": "failed", "message": msg}
         
         category = mediainfo.get("category", {})
         full_path = fileitem.get("path", "")
@@ -140,8 +148,7 @@ async def run_single_task(
             msg = f"[Webhook] 任务开始执行 - {info}"
             logger.info(msg)
             await send_message(msg)
-            await execute_single_task(task_id, refresh=False, sub_dir=name)
-            await send_message(f"{category} - {name} 已添加到 Emby 媒体库")
+            await execute_single_task(task_id, refresh=False, sub_dir=name, meta_str=f"{category} - {name} 已添加到 Emby 媒体库")
 
         asyncio.create_task(delayed_task())
 
